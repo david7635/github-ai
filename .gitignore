@@ -1,0 +1,20 @@
+# Environment & Secrets
+.env
+
+# Python runtime & virtualenvs
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+
+# Databases & Cache directories
+chroma_db/
+bm25_indices/
+.cache/
+
+# OS / IDE metadata
+.DS_Store
+.vscode/
+.idea/

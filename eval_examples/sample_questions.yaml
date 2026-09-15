@@ -1,0 +1,11 @@
+# Example questions for eval.py
+# The expected_file_or_symbol can be a file path or a function/class name that MUST be in the top-k retrieved contexts for a successful retrieval.
+
+- question: "How does the hybrid retrieval work?"
+  expected_file_or_symbol: "retrieval.py"
+
+- question: "Where is the tree-sitter chunking logic located?"
+  expected_file_or_symbol: "chunking.py"
+
+- question: "How is the Groq model initialized?"
+  expected_file_or_symbol: "chat.py"
