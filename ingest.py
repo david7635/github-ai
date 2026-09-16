@@ -9,8 +9,6 @@ import tempfile
 from typing import List, Dict, Any, Tuple
 
 from langchain_core.documents import Document
-from langchain_chroma import Chroma
-from langchain_community.embeddings import HuggingFaceEmbeddings
 from rank_bm25 import BM25Okapi
 
 from chunking import get_ast_chunks
@@ -21,26 +19,13 @@ logger = logging.getLogger(__name__)
 SUPPORTED_EXTENSIONS = {'.py', '.js', '.ts', '.tsx', '.jsx', '.java', '.go', '.rs', '.md', '.json', '.yaml', '.yml'}
 SKIP_DIRS = {'node_modules', '.git', 'venv', '__pycache__', 'dist', 'build'}
 MAX_FILE_SIZE = 500 * 1024
-MAX_CHUNKS = 2500
-EMBED_BATCH_SIZE = 32
-CHROMA_DB_DIR = "./chroma_db"
+MAX_CHUNKS = 1500
 BM25_INDEX_DIR = "./bm25_indices"
-
-_embeddings = None
-
-
-def get_embeddings():
-    """Load the embedding model once per process instead of on every request."""
-    global _embeddings
-    if _embeddings is None:
-        logger.info("Loading embedding model...")
-        _embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    return _embeddings
 
 
 def clone_repo(repo_url: str) -> str:
     temp_dir = tempfile.mkdtemp(prefix="rag_repo_")
-    logger.info(f"Cloning {repo_url} into {temp_dir}")
+    logger.info("Cloning %s into %s", repo_url, temp_dir)
     try:
         subprocess.run(
             ["git", "clone", "--depth", "1", repo_url, temp_dir],
@@ -48,7 +33,7 @@ def clone_repo(repo_url: str) -> str:
         )
         return temp_dir
     except subprocess.CalledProcessError as e:
-        logger.error(f"Git clone failed: {e.stderr}")
+        logger.error("Git clone failed: %s", e.stderr)
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise ValueError(f"Failed to clone repository: {repo_url}")
 
@@ -61,7 +46,7 @@ def get_latest_commit(repo_path: str) -> str:
         )
         return res.stdout.strip()
     except Exception as e:
-        logger.warning(f"Failed to get commit hash: {e}")
+        logger.warning("Failed to get commit hash: %s", e)
         return "unknown_commit"
 
 
@@ -112,22 +97,22 @@ def walk_and_chunk(repo_path: str) -> List[Dict[str, Any]]:
 
 def load_or_ingest_repo(repo_url: str) -> Tuple[str, bool]:
     repo_id = get_repo_name_from_url(repo_url)
-    os.makedirs(CHROMA_DB_DIR, exist_ok=True)
     os.makedirs(BM25_INDEX_DIR, exist_ok=True)
 
-    cache_file = os.path.join(CHROMA_DB_DIR, f"{repo_id}_cache.json")
+    cache_file = os.path.join(BM25_INDEX_DIR, f"{repo_id}_cache.json")
+    bm25_path = os.path.join(BM25_INDEX_DIR, f"{repo_id}.pkl")
     repo_path = clone_repo(repo_url)
     commit_hash = get_latest_commit(repo_path)
 
     try:
-        if os.path.exists(cache_file):
+        if os.path.exists(cache_file) and os.path.exists(bm25_path):
             with open(cache_file, 'r') as f:
                 cache_info = json.load(f)
             if cache_info.get("commit") == commit_hash:
-                logger.info(f"Repo {repo_id} is already cached. Skipping ingestion.")
+                logger.info("Repo %s is already cached. Skipping ingestion.", repo_id)
                 return repo_id, False
 
-        logger.info(f"Processing repository: {repo_id}")
+        logger.info("Processing repository: %s", repo_id)
         chunks = walk_and_chunk(repo_path)
 
         if not chunks:
@@ -145,40 +130,29 @@ def load_or_ingest_repo(repo_url: str) -> Tuple[str, bool]:
             metadata["chunk_id"] = f"{repo_id}_{i}"
             documents.append(Document(page_content=chunk["text"], metadata=metadata))
 
-        # Build BM25 before loading the embedding model, then free its temporary
-        # token corpus and index so peak RAM stays lower during vector indexing.
-        logger.info("Building BM25 index...")
+        # BM25 is intentionally used as the only local retrieval index on the
+        # 512 MB Render instance. This avoids loading PyTorch, sentence-transformers,
+        # Chroma, and a second transformer reranker into the web process.
+        logger.info("Building BM25 index for %s chunks...", len(documents))
         tokenized_corpus = [doc.page_content.lower().split() for doc in documents]
         bm25 = BM25Okapi(tokenized_corpus)
-        bm25_data = {"index": bm25, "documents": documents}
-        bm25_path = os.path.join(BM25_INDEX_DIR, f"{repo_id}.pkl")
+
         with open(bm25_path, 'wb') as f:
-            pickle.dump(bm25_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(
+                {"index": bm25, "documents": documents},
+                f,
+                protocol=pickle.HIGHEST_PROTOCOL
+            )
 
-        del bm25_data, bm25, tokenized_corpus
+        del tokenized_corpus, bm25, documents, chunks, call_graph
         gc.collect()
-
-        logger.info("Embedding %s chunks in batches...", len(documents))
-        vectorstore = Chroma(
-            collection_name=repo_id,
-            embedding_function=get_embeddings(),
-            persist_directory=CHROMA_DB_DIR
-        )
-
-        for start in range(0, len(documents), EMBED_BATCH_SIZE):
-            batch = documents[start:start + EMBED_BATCH_SIZE]
-            vectorstore.add_documents(batch)
-            del batch
-            if start % (EMBED_BATCH_SIZE * 10) == 0:
-                gc.collect()
 
         with open(cache_file, 'w') as f:
             json.dump({"commit": commit_hash}, f)
 
-        logger.info(f"Ingestion complete for {repo_id}")
+        logger.info("Ingestion complete for %s", repo_id)
         return repo_id, True
     finally:
-        del repo_path
         shutil.rmtree(repo_path, ignore_errors=True)
         gc.collect()
 
