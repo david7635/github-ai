@@ -2,6 +2,10 @@
 
 A Retrieval-Augmented Generation (RAG) chatbot designed to help you converse with and understand any GitHub repository.
 
+## Live Demo
+
+[Open the deployed Streamlit app](https://gappai.streamlit.app/)
+
 ## Features
 
 - **AST-Aware Chunking**: Uses `tree-sitter` to parse code into logical chunks (functions, classes) instead of arbitrary text splits.
