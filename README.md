@@ -8,7 +8,7 @@ A Retrieval-Augmented Generation (RAG) chatbot designed to help you converse wit
 
 ## Features
 
-- **AST-Aware Chunking**: Uses `tree-sitter` to parse code into logical chunks (functions, classes) instead of arbitrary text splits.
+- **Code-Aware Chunking**: Extracts logical code structures such as functions, classes, and methods when available, with a text-based fallback.
 - **Hybrid Retrieval**: Combines semantic vector search (ChromaDB + sentence-transformers) with keyword search (BM25) for high-recall candidate selection.
 - **Cross-Encoder Re-ranking**: Uses a cross-encoder to accurately score and re-rank retrieved candidates based on the query.
 - **Call Graph Context**: Best-effort expansion of context to include called functions, providing the LLM with deeper insights into code execution.
@@ -62,7 +62,7 @@ The selected model is passed from `app.py` to `chat.py` at runtime, so the gener
 - `app.py`: Streamlit frontend, repository controls, model selection, chat history, and response display.
 - `chat.py`: LangChain/Groq integration and streaming LLM responses.
 - `ingest.py`: Repository cloning, traversal, chunking, and indexing orchestration.
-- `chunking.py`: AST parsing and code chunking logic.
+- `chunking.py`: Code-aware chunking logic with a text-based fallback.
 - `callgraph.py`: Call graph extraction and context expansion logic.
 - `retrieval.py`: Hybrid search, cross-encoder re-ranking, and context retrieval.
 - `eval.py`: CLI tool for evaluating retrieval precision.
@@ -76,7 +76,7 @@ GitHub Repository
 Repository Ingestion
        |
        v
-AST-Aware Chunking
+Code-Aware Chunking
        |
        +------------------+
        |                  |
@@ -104,3 +104,21 @@ AST-Aware Chunking
                 v
         Answer + Sources
 ```
+
+## References
+
+- Lewis, P. et al. (2020). Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks.
+- Reimers, N. & Gurevych, I. (2019). Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks.
+- Robertson, S. & Zaragoza, H. (2009). The Probabilistic Relevance Framework: BM25 and Beyond.
+
+## Models
+
+- `sentence-transformers/all-MiniLM-L6-v2` — Apache-2.0
+- `cross-encoder/ms-marco-MiniLM-L6-v2` — Apache-2.0
+- `openai/gpt-oss-120b` — Apache-2.0
+- `openai/gpt-oss-20b` — Apache-2.0
+- `Qwen/Qwen3-32B` — Apache-2.0
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
